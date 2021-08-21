@@ -14,8 +14,92 @@ editor_options:
   markdown:
     wrap: 72
 ---
+# init 
 
 ```{r}
 library(tidyverse)
+library(corrr)
+library(tidymodels)
+theme_set(theme_classic())
+```
+
+Al cargar los datos especificamos el separador de celdas y de decimales, para parsear correctamente el archivo.
+
+```{r}
+churn <- read_delim("churn.csv",
+  delim = ";",
+  locale = locale(decimal_mark = ",")
+) %>%
+  janitor::clean_names()
+```
+
+# miramos variables
+
+Primero calculamos un resumen general. Vemos que no tenemos datos missing. Dentro de las
+numericas, el area_code no es realmente numerica. Por lo cual la cambiamos a factor.
+Ademas, arreglamos la variable churn, que es un string feo. 
+
+```{r}
+churn %>% 
+  mutate(area_code = factor(area_code),
+         churn = str_detect(churn, fixed("true", ignore_case = T))) -> churn
+
+churn %>% skimr::skim()
+```
+
+## correlaciones
+
+Miramos correlaciones de las variables numericas mediante un correlograma. En la diagonal
+tenemos correlacion perfecta, obviamente, pero ademas hay un par de variables altamente correlacionadas:
+los cargos con la cantidad de minutos. Esto es esperable, ya que el cargo es proporcional a la cantidad 
+de minutos (escalando por el precio del minuto segun la categoria, dia/tarde/noche/internacional). Eliminamos las variables de cargos, arbitrariamente.
+
+Con respecto a las otras, no hay correlaciones (nótese todo el correlograma en blanco = 0)
+
+```{r}
+churn %>%
+  select(where(is.numeric)) %>% 
+  # seteamos la diagonal a 1 para evitar artefactos
+  correlate(diagonal = 1) %>% 
+  rearrange() %>% 
+  shave() %>% 
+  rplot() + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+## distribuciones
+
+Para mirar las distribuciones tenemos que mover un poco la tabla. Para eso pivoteamos.
+No parece haber cosas extrañas. La mayoria de las variables son aproximadamente normales,
+salvo algunas (cust_serv_calls, intl_calls) que son asimetricas positivas, y vmail_message, que
+es bimodal (en particular, la gran mayoria de los valores es cero)
+
+```{r}
+churn %>%
+  select(where(is.numeric)) %>%
+  pivot_longer(cols = everything(), names_to = "var", values_to = "value") %>%
+  ggplot(aes(value)) +
+  geom_histogram(alpha = 0.3, bins = 20) +
+  facet_wrap(~var, scales = "free")
+```
+
+Mirando con mas detalle vmail_message, eliminando las observaciones 0, vemos que
+tiene forma acampanada.
+
+```{r}
+churn %>% 
+  filter(vmail_message != 0) %>% 
+  ggplot(aes(vmail_message)) + geom_histogram(alpha = 0.3, binwidth = 1)
+```
+
+Para corroborar, podemos hacer qqplots. Corroboramos que todas las variables, salvo
+cust_serv_calls e intl_calls son aproximadamente normales. 
+
+```{r}
+churn %>%
+  select(where(is.numeric)) %>%
+  pivot_longer(cols = everything(), names_to = "var", values_to = "value") %>%
+  filter(!(var == "vmail_message" & value == 0)) %>% 
+  ggplot(aes(sample = value)) + 
+  geom_qq(size = .1) + geom_qq_line() + facet_wrap(~var, scales = "free")
 ```
 
