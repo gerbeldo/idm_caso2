@@ -18,8 +18,8 @@ editor_options:
 
 ```{r}
 library(tidyverse)
-library(corrr)
 library(tidymodels)
+library(corrr)
 theme_set(theme_classic())
 ```
 
@@ -101,5 +101,32 @@ churn %>%
   filter(!(var == "vmail_message" & value == 0)) %>% 
   ggplot(aes(sample = value)) + 
   geom_qq(size = .1) + geom_qq_line() + facet_wrap(~var, scales = "free")
+```
+
+Por ultimo, podemos separar (coloreando) las distribuciones de las numericas por churn,
+para ver si hay asociaciones. Vemos que la mayoria de las distribuciones son similares, salvo
+day_charge y day_mins (que son proporcionales, como mencionamos antes). Parece que 
+hay una subpoblacion de churners que hablan mas cantidad de minutos durante el dia.
+
+Con respecto a cust_serv_calls, dado que es una variable discreta (y con muy baja cardinalidad) la
+estimacion de la distribución es artefactual.
+
+```{r}
+churn %>%
+  select(where(is.numeric), churn) %>%
+  pivot_longer(cols = -churn, names_to = "var", values_to = "value") %>% 
+  ggplot(aes(value, color = churn, fill = churn)) +
+  geom_density(alpha = 0.3) +
+  #geom_histogram(alpha = 0.3) +
+  facet_wrap(~var, scales = "free")
+```
+
+## categoricas
+
+```{r}
+churn %>% 
+  select(where(~ !is.numeric(.x) | is.factor(.x))) %>%
+  select(-c(state, phone)) %>% 
+  GGally::ggpairs(aes(fill = churn), proportions = "auto")
 ```
 
