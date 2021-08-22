@@ -42,7 +42,8 @@ Ademas, arreglamos la variable churn, que es un string feo.
 ```{r}
 churn %>% 
   mutate(area_code = factor(area_code),
-         churn = str_detect(churn, fixed("true", ignore_case = T))) -> churn
+         churn = str_detect(churn, fixed("true", ignore_case = T)),
+         state = factor(state)) -> churn
 
 churn %>% skimr::skim()
 ```
@@ -64,6 +65,8 @@ churn %>%
   rearrange() %>% 
   shave() %>% 
   rplot() + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+churn %>% select(-ends_with("charge")) -> churn
 ```
 
 ## distribuciones
@@ -105,8 +108,7 @@ churn %>%
 
 Por ultimo, podemos separar (coloreando) las distribuciones de las numericas por churn,
 para ver si hay asociaciones. Vemos que la mayoria de las distribuciones son similares, salvo
-day_charge y day_mins (que son proporcionales, como mencionamos antes). Parece que 
-hay una subpoblacion de churners que hablan mas cantidad de minutos durante el dia.
+day_mins. Parece que hay una subpoblacion de churners que hablan mas cantidad de minutos durante el dia.
 
 Con respecto a cust_serv_calls, dado que es una variable discreta (y con muy baja cardinalidad) la
 estimacion de la distribución es artefactual.
@@ -121,12 +123,99 @@ churn %>%
   facet_wrap(~var, scales = "free")
 ```
 
+
+```{r}
+churn %>%
+  select(where(is.numeric), churn) %>%
+  pivot_longer(cols = -churn, names_to = "var", values_to = "value") %>% 
+  ggplot(aes(churn, value, color = churn)) +
+  geom_boxplot()+
+  facet_wrap(~var, scales = "free")
+```
+
+
 ## categoricas
+
+Graficamos las proporciones de churn en los niveles de las diferentes variables categoricas.
+Vemos que no hay asociacion con respecto al area_code. Por otro lado, los clientes con intl_plan son
+mas propensos a churnear. Por ultimo, con respecto a vmail_plan, los clientes sin vmail_plan tienden a churnear un poco mas, pero la diferencia es pequeña. 
 
 ```{r}
 churn %>% 
-  select(where(~ !is.numeric(.x) | is.factor(.x))) %>%
-  select(-c(state, phone)) %>% 
-  GGally::ggpairs(aes(fill = churn), proportions = "auto")
+  select(area_code, intl_plan, vmail_plan, churn) %>% 
+  pivot_longer(cols = -churn, names_to = "var", values_to = "level") %>%
+  count(var, level, churn) %>% 
+  group_by(var, level) %>% 
+  mutate(total_per_level = sum(n),
+         prop_churn = n / total_per_level) %>% 
+  
+  ggplot(aes(level, prop_churn, fill = churn)) +
+  geom_col() +
+  facet_wrap(~var, scales = "free_x")
+  
+```
+
+Con respecto al estado de residencia, lo miramos independientemente, ya que posee
+alta cardinalidad y se ensucian las figuras. Graficando la proporcion de churn por estado
+vemos que hay diferencias entre estados. Podemos explorar por region graficando un mapa!
+
+```{r}
+churn %>% 
+  count(state, churn) %>% 
+  group_by(state) %>% 
+  mutate(total_per_state = sum(n),
+         prop_churn = n / total_per_state,
+         # creo columna para ordenar (necesito 1 elemento por nivel!)
+         order = prop_churn[churn == TRUE]) %>% ungroup() -> churn_state
+
+churn_state %>% 
+  # reordeno state via la columna de orden
+  ggplot(aes(x = fct_reorder(state, order), y = prop_churn, fill = churn)) +
+  geom_col()
+```
+
+No vemos una asociacion regional muy marcada con respecto a la probabilidad de churn.
+Quiza en la costa oeste y noreste la probabilidad es un poco mayor. Mientras que 
+el interior del pais tiende a ser mas oscuro. Pero hay excepciones.
+
+Vale aclarar que no nos especializamos (aun) en analisis geografico (ni mucho menos),
+por lo que desconocemos las potenciales sutilezas en la representación e interpretación. 
+Pero nos pareció un lindo experimento.
+
+```{r}
+
+# cargo tabla para graficar mapa
+us <- map_data("state")
+
+# necesito los codigos de dos letras de los estados
+state_code <- tibble(state = state.abb,
+                     state_name = tolower(state.name))
+# junto los codigos en la tabla del mapa
+us %>%
+  left_join(state_code, by = c("region" = "state_name")) -> us
+
+# defino un theme lindo para el mapa, sacando todas las lineas y textos
+theme_mapa <- theme_minimal() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text = element_blank(),
+    axis.title = element_blank()
+  )
+
+churn_state %>%
+  select(state, churn, prop_churn) %>% 
+  pivot_wider(names_from = churn, values_from = prop_churn, names_prefix = "churn_") %>% 
+  #mutate(log_odds = log(churn_TRUE / churn_FALSE)) %>% 
+  right_join(us, by = "state") %>% 
+  
+  ggplot(aes(fill = churn_TRUE)) + 
+  # importante el group para que las lineas del mapa queden unidas por estado
+  geom_polygon(aes(long, lat, group = group), color = "black") +
+  scale_fill_viridis_c() +
+  coord_map() + 
+  
+  ggtitle("probabilidad de churn por estado") +
+  theme_mapa
 ```
 
