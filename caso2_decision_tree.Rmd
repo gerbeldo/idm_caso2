@@ -106,12 +106,14 @@ churn %>%
   geom_qq(size = .1) + geom_qq_line() + facet_wrap(~var, scales = "free")
 ```
 
-Por ultimo, podemos separar (coloreando) las distribuciones de las numericas por churn,
-para ver si hay asociaciones. Vemos que la mayoria de las distribuciones son similares, salvo
-day_mins. Parece que hay una subpoblacion de churners que hablan mas cantidad de minutos durante el dia.
+Por último, podemos separar (coloreando) las distribuciones de las numéricas por churn,
+para ver si hay asociaciones. Vemos que la mayoría de las distribuciones son similares, salvo
+day_mins, y cust_serv_calls. Parece que hay una subpoblación de churners que hablan mas cantidad de minutos durante el día.
 
-Con respecto a cust_serv_calls, dado que es una variable discreta (y con muy baja cardinalidad) la
-estimacion de la distribución es artefactual.
+Con respecto a cust_serv_calls, parece un poco bimodal en los clientes que churnean, mientras
+que en los que no parece unimodal. Los picos que se ven en la densidad son artefactos
+causados por dos cosas, la alta cantidad de datos y que es una variable discreta; en los
+churners no se ven porque son pocos datos, y la estimación de la densidad no es "tan buena".
 
 ```{r}
 churn %>%
@@ -123,6 +125,8 @@ churn %>%
   facet_wrap(~var, scales = "free")
 ```
 
+Otra forma de graficar las distribuciones es como boxplots, separndo por churn.
+Esto permite ver un poco mejor que hay una (pequeña) diferencia en las variables de minutos.
 
 ```{r}
 churn %>%
@@ -353,5 +357,71 @@ vip::vip(tree_fit)
 
 ```
 
+La eliminamos y repetimos el proceso de tuning:
 
+```{r}
+rec_dt_no_phone <- recipe(churn ~ ., churn_train) %>% 
+  update_role(phone, new_role = "id variable")
+
+  
+dt_tune_wkfl_no_phone <- workflow() %>%
+  add_recipe(rec_dt_no_phone) %>%
+  add_model(tree_model_tune)
+  
+
+cl <- parallel::makePSOCKcluster(8)
+doParallel::registerDoParallel(cl, cores = 8)
+
+set.seed(123)
+# tuneo
+tic()
+dt_tuning_no_phone <- tune_grid(dt_tune_wkfl_no_phone,
+  resamples = churn_folds,
+  grid = dt_tune_grid,
+  metrics = churn_metrics
+)
+toc()
+beepr::beep("coin")
+```
+
+Y graficamos los resultados, ahora si, viendo como varia la performance al modificar los parámetros.
+
+```{r}
+dt_tuning_no_phone %>%
+  autoplot()
+```
+
+Luego nos quedamos con el mejor set de parámetros según la el área bajo ROC.
+
+```{r}
+best_dt_params_no_phone <- dt_tuning_no_phone %>%
+  select_best(metric = "roc_auc")
+
+best_dt_params_no_phone
+
+```
+
+Fitteamos, y evaluamos en test.
+
+```{r}
+dt_tune_final_wkfl_no_phone <- dt_tune_wkfl_no_phone %>% 
+  finalize_workflow(best_dt_params_no_phone)
+
+tree_model_no_phone <- dt_tune_final_wkfl_no_phone %>% 
+  last_fit(churn_split)
+
+tree_model_no_phone %>% collect_metrics()
+
+```
+
+Por último, graficamos la importancia de las variables. Vemos que la variable mas
+importante en la clasificacion es la cantidad de minutos hablados en el día.
+
+```{r}
+tree_fit_no_phone <- tree_model_no_phone %>% 
+            extract_fit_parsnip()
+
+vip::vip(tree_fit_no_phone)
+
+```
 
