@@ -219,3 +219,139 @@ churn_state %>%
   theme_mapa
 ```
 
+# modelado
+
+Primero particionamos los datos en train/test.
+
+```{r}
+churn %>% 
+  mutate(churn = factor(churn)) -> churn
+
+set.seed(231)
+churn_split <- initial_split(churn, prop = 0.80,
+                             strata = churn)
+
+churn_train <- training(churn_split)
+
+churn_test <- testing(churn_split)
+
+churn_folds <- vfold_cv(churn_train, v = 5, strata = churn)
+```
+
+Ademas definimos una funcion con las metricas de performance que nos interesan
+para evaluar la optimizacion de hiperparametros.
+
+```{r}
+churn_metrics <- metric_set(accuracy, sens, spec, roc_auc)
+```
+
+Definimos receta de preprocesamiento. Para un arbol no hay que hacer mucho, unicamente
+especificar la formula para el modelado: queremos predecir churn en funcion de todas
+las otras variables.
+
+```{r}
+rec_dt <- recipe(churn ~ ., churn_train) #%>% 
+  #update_role(phone, new_role = "id variable")
+```
+
+Definimos el modelo, con parametros a tunear
+
+```{r}
+tree_model_tune <- decision_tree(tree_depth = tune(),
+                                 cost_complexity = tune(),
+                                 min_n = tune()) %>% 
+  set_engine("rpart") %>% 
+  set_mode("classification")
+```
+
+Juntamos todo en un workflow: receta de preprocessing + modelo
+
+```{r}
+dt_tune_wkfl <- workflow() %>%
+  add_recipe(rec_dt) %>%
+  add_model(tree_model_tune)
+```
+
+Necesitamos una forma de samplear el espacio de parametros a explorar, para lo que 
+armamos una grilla regular (en parte porque permite una visualización mas cómoda
+de los resultados, contra latin hypercube sampling por ejemplo, gracias a que se
+repiten los valores de los parámetros)
+
+```{r}
+#dt_tune_grid <- grid_latin_hypercube(parameters(dt_tune_wkfl), size = 20)
+set.seed(312)
+dt_tune_grid <- grid_regular(parameters(dt_tune_wkfl), levels = 5)
+```
+
+Tuneamos el modelo
+
+```{r}
+
+cl <- parallel::makePSOCKcluster(8)
+doParallel::registerDoParallel(cl, cores = 8)
+
+set.seed(123)
+# tuneo
+tic()
+dt_tuning <- tune_grid(dt_tune_wkfl,
+                       resamples = churn_folds,
+                       grid = dt_tune_grid,
+                       metrics = churn_metrics)
+toc()
+beepr::beep("coin")
+```
+
+Graficamos los resultados y nos encontramos con que no importa el valor de los parámetros
+explorados, todas las medidas de performance dan iguales. Este resultado desde ya es extraño
+así que decidimos estudiar un poco más la cuestión.
+
+```{r}
+autoplot(dt_tuning)
+```
+
+Nos quedamos con "el mejor modelo" (por quedarnos con uno, porque dan todos practicamente idénticos)
+usando el área bajo la curva ROC. Vemos que es un modelo super "complejo" (cost_complexity ~ 0), pocos 
+datos por nodo, pero con una profundidad de 1. Es decir, un solo split, lo cual nos hizo mas ruido.
+
+```{r}
+# dt_tuning %>%
+#   collect_metrics() %>%
+#   arrange(.metric, desc(mean))
+
+best_dt_params <- dt_tuning %>%
+  select_best(metric = "roc_auc")
+
+best_dt_params
+```
+
+Finalizamos el workflow, usando este set de párametros. Luego corremos el ultimo
+fit con todo el training set (sin hacer cross-validation), y calculamos las métricas
+con el test set (esta separación es automática, con la función last_fit)
+
+```{r}
+dt_tune_final_wkfl <- dt_tune_wkfl %>% 
+  finalize_workflow(best_dt_params)
+
+tree_model <- dt_tune_final_wkfl %>% 
+  last_fit(churn_split)
+
+tree_model %>% collect_metrics()
+
+```
+
+Luego extraemos el modelo para explorarlo un poco mejor, usando el paquete vip, para 
+graficar la importancia de los predictores en la predicción.
+Y acá encontramos el problema (después de horas de debugging, pensando que el error
+estaba en el código): Estamos usando la variable phone para clasificar! lo cual no tiene
+sentido ya que es una variable de ID. 
+
+```{r}
+tree_fit <- tree_model %>% 
+            extract_fit_parsnip()
+
+vip::vip(tree_fit)
+
+```
+
+
+
