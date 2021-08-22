@@ -16,7 +16,7 @@ editor_options:
 ---
 # init 
 
-```{r}
+```{r echo = F}
 library(tidyverse)
 library(tidymodels)
 library(corrr)
@@ -36,13 +36,13 @@ churn <- read_delim("churn.csv",
 # miramos variables
 
 Primero calculamos un resumen general. Vemos que no tenemos datos missing. Dentro de las
-numericas, el area_code no es realmente numerica. Por lo cual la cambiamos a factor.
-Ademas, arreglamos la variable churn, que es un string feo. 
+numéricas, el `area_code` no es realmente numérica. Por lo cual la cambiamos a factor.
+Además, arreglamos la variable `churn`, que es un string feo. 
 
 ```{r}
 churn %>% 
   mutate(area_code = factor(area_code),
-         churn = str_detect(churn, fixed("true", ignore_case = T)),
+         churn = str_detect(churn, stringr::fixed("true", ignore_case = T)),
          state = factor(state)) -> churn
 
 churn %>% skimr::skim()
@@ -50,10 +50,10 @@ churn %>% skimr::skim()
 
 ## correlaciones
 
-Miramos correlaciones de las variables numericas mediante un correlograma. En la diagonal
-tenemos correlacion perfecta, obviamente, pero ademas hay un par de variables altamente correlacionadas:
+Miramos correlaciones de las variables numéricas mediante un correlograma. En la diagonal
+tenemos correlación perfecta, obviamente, pero además hay un par de variables altamente correlacionadas:
 los cargos con la cantidad de minutos. Esto es esperable, ya que el cargo es proporcional a la cantidad 
-de minutos (escalando por el precio del minuto segun la categoria, dia/tarde/noche/internacional). Eliminamos las variables de cargos, arbitrariamente.
+de minutos (escalando por el precio del minuto según la categoría, día/tarde/noche/internacional). Eliminamos las variables de cargos, eligiéndola arbitrariamente.
 
 Con respecto a las otras, no hay correlaciones (nótese todo el correlograma en blanco = 0)
 
@@ -72,9 +72,9 @@ churn %>% select(-ends_with("charge")) -> churn
 ## distribuciones
 
 Para mirar las distribuciones tenemos que mover un poco la tabla. Para eso pivoteamos.
-No parece haber cosas extrañas. La mayoria de las variables son aproximadamente normales,
-salvo algunas (cust_serv_calls, intl_calls) que son asimetricas positivas, y vmail_message, que
-es bimodal (en particular, la gran mayoria de los valores es cero)
+No parece haber cosas extrañas. La mayoría de las variables son aproximadamente normales,
+salvo algunas (`cust_serv_calls`, `intl_calls`) que son asimétricas positivas, y `vmail_message`, que
+es bimodal (en particular, la gran mayoría de los valores es cero).
 
 ```{r}
 churn %>%
@@ -85,7 +85,7 @@ churn %>%
   facet_wrap(~var, scales = "free")
 ```
 
-Mirando con mas detalle vmail_message, eliminando las observaciones 0, vemos que
+Mirando con más detalle `vmail_message`, eliminando las observaciones 0, vemos que
 tiene forma acampanada.
 
 ```{r}
@@ -95,7 +95,7 @@ churn %>%
 ```
 
 Para corroborar, podemos hacer qqplots. Corroboramos que todas las variables, salvo
-cust_serv_calls e intl_calls son aproximadamente normales. 
+`cust_serv_calls` e `intl_calls` son aproximadamente normales. 
 
 ```{r}
 churn %>%
@@ -106,11 +106,11 @@ churn %>%
   geom_qq(size = .1) + geom_qq_line() + facet_wrap(~var, scales = "free")
 ```
 
-Por último, podemos separar (coloreando) las distribuciones de las numéricas por churn,
+Por último, podemos separar (coloreando) las distribuciones de las numéricas por `churn`,
 para ver si hay asociaciones. Vemos que la mayoría de las distribuciones son similares, salvo
-day_mins, y cust_serv_calls. Parece que hay una subpoblación de churners que hablan mas cantidad de minutos durante el día.
+`day_mins`, y `cust_serv_calls.` Parece que hay una subpoblación de churners que hablan mas cantidad de minutos durante el día.
 
-Con respecto a cust_serv_calls, parece un poco bimodal en los clientes que churnean, mientras
+Con respecto a `cust_serv_calls`, parece un poco bimodal en los clientes que churnean, mientras
 que en los que no parece unimodal. Los picos que se ven en la densidad son artefactos
 causados por dos cosas, la alta cantidad de datos y que es una variable discreta; en los
 churners no se ven porque son pocos datos, y la estimación de la densidad no es "tan buena".
@@ -138,11 +138,11 @@ churn %>%
 ```
 
 
-## categoricas
+## categóricas
 
-Graficamos las proporciones de churn en los niveles de las diferentes variables categoricas.
-Vemos que no hay asociacion con respecto al area_code. Por otro lado, los clientes con intl_plan son
-mas propensos a churnear. Por ultimo, con respecto a vmail_plan, los clientes sin vmail_plan tienden a churnear un poco mas, pero la diferencia es pequeña. 
+Graficamos las proporciones de churn en los niveles de las diferentes variables categóricas.
+Vemos que no hay asociación con respecto al area_code. Por otro lado, los clientes con intl_plan son
+mas propensos a churnear. Por último, con respecto a vmail_plan, los clientes sin vmail_plan tienden a churnear un poco más, pero la diferencia es pequeña. 
 
 ```{r}
 churn %>% 
@@ -296,13 +296,13 @@ doParallel::registerDoParallel(cl, cores = 8)
 
 set.seed(123)
 # tuneo
-tic()
+#tic()
 dt_tuning <- tune_grid(dt_tune_wkfl,
                        resamples = churn_folds,
                        grid = dt_tune_grid,
                        metrics = churn_metrics)
-toc()
-beepr::beep("coin")
+#toc()
+#beepr::beep("coin")
 ```
 
 Graficamos los resultados y nos encontramos con que no importa el valor de los parámetros
@@ -374,14 +374,14 @@ doParallel::registerDoParallel(cl, cores = 8)
 
 set.seed(123)
 # tuneo
-tic()
+#tic()
 dt_tuning_no_phone <- tune_grid(dt_tune_wkfl_no_phone,
   resamples = churn_folds,
   grid = dt_tune_grid,
   metrics = churn_metrics
 )
-toc()
-beepr::beep("coin")
+#toc()
+#beepr::beep("coin")
 ```
 
 Y graficamos los resultados, ahora si, viendo como varia la performance al modificar los parámetros.
