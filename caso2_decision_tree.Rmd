@@ -16,7 +16,8 @@ editor_options:
 ---
 # init 
 
-```{r echo = F}
+```{r message = F}
+library(doParallel)
 library(tidyverse)
 library(tidymodels)
 library(corrr)
@@ -25,7 +26,7 @@ theme_set(theme_classic())
 
 Al cargar los datos especificamos el separador de celdas y de decimales, para parsear correctamente el archivo.
 
-```{r}
+```{r message = F}
 churn <- read_delim("churn.csv",
   delim = ";",
   locale = locale(decimal_mark = ",")
@@ -57,7 +58,7 @@ de minutos (escalando por el precio del minuto según la categoría, día/tarde/
 
 Con respecto a las otras, no hay correlaciones (nótese todo el correlograma en blanco = 0)
 
-```{r}
+```{r message = F, warning = F}
 churn %>%
   select(where(is.numeric)) %>% 
   # seteamos la diagonal a 1 para evitar artefactos
@@ -289,20 +290,21 @@ dt_tune_grid <- grid_regular(parameters(dt_tune_wkfl), levels = 5)
 
 Tuneamos el modelo
 
-```{r}
-
+```{r cache = T}
 cl <- parallel::makePSOCKcluster(8)
-doParallel::registerDoParallel(cl, cores = 8)
+registerDoParallel(cl)
 
 set.seed(123)
 # tuneo
 #tic()
 dt_tuning <- tune_grid(dt_tune_wkfl,
-                       resamples = churn_folds,
-                       grid = dt_tune_grid,
-                       metrics = churn_metrics)
+  resamples = churn_folds,
+  grid = dt_tune_grid,
+  metrics = churn_metrics
+)
+#parallel::stopCluster(cl)
 #toc()
-#beepr::beep("coin")
+# beepr::beep("coin")
 ```
 
 Graficamos los resultados y nos encontramos con que no importa el valor de los parámetros
@@ -333,14 +335,13 @@ fit con todo el training set (sin hacer cross-validation), y calculamos las mét
 con el test set (esta separación es automática, con la función last_fit)
 
 ```{r}
-dt_tune_final_wkfl <- dt_tune_wkfl %>% 
+dt_tune_final_wkfl <- dt_tune_wkfl %>%
   finalize_workflow(best_dt_params)
 
-tree_model <- dt_tune_final_wkfl %>% 
+tree_model <- dt_tune_final_wkfl %>%
   last_fit(churn_split)
 
 tree_model %>% collect_metrics()
-
 ```
 
 Luego extraemos el modelo para explorarlo un poco mejor, usando el paquete vip, para 
@@ -350,38 +351,39 @@ estaba en el código): Estamos usando la variable phone para clasificar! lo cual
 sentido ya que es una variable de ID. 
 
 ```{r}
-tree_fit <- tree_model %>% 
-            extract_fit_parsnip()
+tree_fit <- tree_model %>%
+  extract_fit_parsnip()
 
 vip::vip(tree_fit)
-
 ```
 
 La eliminamos y repetimos el proceso de tuning:
 
-```{r}
-rec_dt_no_phone <- recipe(churn ~ ., churn_train) %>% 
+```{r cache = T}
+rec_dt_no_phone <- recipe(churn ~ ., churn_train) %>%
   update_role(phone, new_role = "id variable")
 
-  
+
 dt_tune_wkfl_no_phone <- workflow() %>%
   add_recipe(rec_dt_no_phone) %>%
   add_model(tree_model_tune)
-  
 
-cl <- parallel::makePSOCKcluster(8)
-doParallel::registerDoParallel(cl, cores = 8)
+
+#tic()
+# cl <- parallel::makePSOCKcluster(8)
+# registerDoParallel(cl)
 
 set.seed(123)
 # tuneo
-#tic()
+
 dt_tuning_no_phone <- tune_grid(dt_tune_wkfl_no_phone,
   resamples = churn_folds,
   grid = dt_tune_grid,
   metrics = churn_metrics
 )
+#parallel::stopCluster(cl)
 #toc()
-#beepr::beep("coin")
+# beepr::beep("coin")
 ```
 
 Y graficamos los resultados, ahora si, viendo como varia la performance al modificar los parámetros.
@@ -398,30 +400,79 @@ best_dt_params_no_phone <- dt_tuning_no_phone %>%
   select_best(metric = "roc_auc")
 
 best_dt_params_no_phone
-
 ```
 
 Fitteamos, y evaluamos en test.
 
 ```{r}
-dt_tune_final_wkfl_no_phone <- dt_tune_wkfl_no_phone %>% 
+dt_tune_final_wkfl_no_phone <- dt_tune_wkfl_no_phone %>%
   finalize_workflow(best_dt_params_no_phone)
 
-tree_model_no_phone <- dt_tune_final_wkfl_no_phone %>% 
+tree_model_no_phone <- dt_tune_final_wkfl_no_phone %>%
   last_fit(churn_split)
 
 tree_model_no_phone %>% collect_metrics()
-
 ```
 
-Por último, graficamos la importancia de las variables. Vemos que la variable mas
-importante en la clasificacion es la cantidad de minutos hablados en el día.
+Graficamos la importancia de las variables. Vemos que la variable más
+importante en la clasificación es la cantidad de minutos hablados en el día.
 
 ```{r}
-tree_fit_no_phone <- tree_model_no_phone %>% 
-            extract_fit_parsnip()
+tree_fit_no_phone <- tree_model_no_phone %>%
+  extract_fit_parsnip()
 
 vip::vip(tree_fit_no_phone)
+```
+
+Y por último imprimimos el arbol al que llegamos. 
+
+```{r}
+rpart.plot::rpart.plot(tree_fit_no_phone$fit, roundint = F)
+```
+
+# respuestas a preguntas teóricas
+
+1. Sí! Seria útil ya que permitiría enfocar los esfuerzos de retención en potenciales
+churners, optimizando el costo-beneficio. Pero además, dado que podemos estudiar 
+la importancia de las variables en la "churneación", la empresa podría investigar
+sobre /por qué/ los clientes churnean, buscando corregir las falencias. En este caso en 
+particular, vimos que la cantidad de minutos hablados en el día es una variable de importancia
+en la predicción; quizá tener una escala de precios que disminuya con el uso, evitaría que 
+clientes que hablan mucho durante el día abandonen la empresa.
+
+2. Tanto el EDA como el modelado predictivo, como hicimos en este trabajo, pueden ser útiles.
+
+3. Toda variable de uso del servicio/producto es potencialmente útil.
+
+4. Los parámetros a definir dependen del modelo a usar. Los valores en general
+son optimizados mediante la exploracion y el uso de alguna métrica de performance
+pertinente.
+
+5. La dimensión "tiempo" no esta incluida en este dataset. Es mas bien una "foto"
+de las variables medidas (quizá algún tipo de promedio sobre una ventana temporal), y 
+si el cliente churneó (quizá luego de la ventana temporal). Idealmente, nos gustaría
+predecir si los clientes /van a/ churnear, /en un futuro/. Esta anticipación permitiría
+intentar retenerlos. Por lo que seria útil tener las variables junto a la dimensión temporal.
+
+6. Respondido parcialemente en 1. Los clientes que predecimos podrían churnear 
+serían los targets de campañas de retención, ofreciendo beneficios, por ejemplo. 
+Por otro lado, las variables importantes en la predicción pueden ser consideradas como
+falencias en el servicio ofrecido, y podría intentarse su mejora, paraque 
+los clientes ni sientan el deseo de churnear siquiera.
+
+8. La tabla de predicción sobre el test set, que contiene la probabilidad de predicción,
+la clase predicha (con un cutoff de P = 0.5), y en la última columna el /ground truth/: la variable `churn.`
+
+```{r}
+tree_model_no_phone %>% 
+  collect_predictions() %>% 
+  select(-c(id, .row,.config)) %>% 
+  rmarkdown::paged_table()
+```
+
+
+```{r echo = F}
+#parallel::stopCluster(cl)
 
 ```
 
