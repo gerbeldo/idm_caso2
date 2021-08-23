@@ -1,6 +1,6 @@
 ---
-title: "title"
-author: "author"
+title: "Caso 2: predicción de Churn en una Telco"
+author: "Beldorati Stark Germán, Bondarchuk María, Brankevich Paula, Mancino Melina, Pereyra Zorraquín Nicolás"
 output:
   html_document:
     df_print: paged
