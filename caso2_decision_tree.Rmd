@@ -426,7 +426,7 @@ tree_fit_no_phone <- tree_model_no_phone %>%
 vip::vip(tree_fit_no_phone)
 ```
 
-Y por último imprimimos el arbol al que llegamos. 
+Y por último imprimimos el árbol al que llegamos. 
 
 ```{r}
 rpart.plot::rpart.plot(tree_fit_no_phone$fit, roundint = F)
@@ -475,6 +475,5 @@ tree_model_no_phone %>%
 
 ```{r echo = F}
 #parallel::stopCluster(cl)
-
 ```
 
