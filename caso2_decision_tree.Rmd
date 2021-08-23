@@ -49,7 +49,9 @@ churn %>%
 churn %>% skimr::skim()
 ```
 
-## correlaciones
+## numéricas
+
+### correlaciones
 
 Miramos correlaciones de las variables numéricas mediante un correlograma. En la diagonal
 tenemos correlación perfecta, obviamente, pero además hay un par de variables altamente correlacionadas:
@@ -70,7 +72,7 @@ churn %>%
 churn %>% select(-ends_with("charge")) -> churn
 ```
 
-## distribuciones
+### distribuciones
 
 Para mirar las distribuciones tenemos que mover un poco la tabla. Para eso pivoteamos.
 No parece haber cosas extrañas. La mayoría de las variables son aproximadamente normales,
